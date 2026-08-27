@@ -680,10 +680,11 @@ function applyCategoryFlow(r){
   const n=r.nodes; if(!n||!n[0])return;
   if(!r.工程編號)return;                       // 節點1 未完成 → 不跳轉
   const type=categoryType(r);
+  const skipNode3 = (type==='urgent') || (r.工程類別==='小額工程'); // 緊急、小額：發包後跳過節點3，直接到節點4
   const skip = (type==='sub'||type==='self') ? {1:true,2:true,3:true}
-             : (type==='urgent')            ? {2:true} : {};
-  // 緊急：節點3 跳過的前提是節點2 已完成（有發包接件日期）
-  if(type==='urgent' && !nodeHasData(r,1)) skip[2]=false;
+             : skipNode3                     ? {2:true} : {};
+  // 節點3 跳過的前提是節點2 已完成（有發包接件日期）
+  if(skipNode3 && !nodeHasData(r,1)) skip[2]=false;
   [1,2,3].forEach(idx=>{
     if(nodeHasData(r,idx)) n[idx].status='done';
     else if(skip[idx])     n[idx].status='done';   // 依類別跳過
@@ -2368,7 +2369,7 @@ function renderStats(){
                    : ((r.nodes[5]&&r.nodes[5].date)||'');
   const perfList=records.filter(r=>{ const vd=perfBase(r); return vd && inSelMonth(vd) && matchUnit(r) && matchStaff(r); })
     .sort((a,b)=>(perfBase(b)||'').localeCompare(perfBase(a)||''));
-  const perfRows=perfList.map(r=>`<tr class="perf-row" data-id="${esc(r.id)}"><td>${esc(dispEngName(r))}</td><td class="num">${esc(r.評分||'—')}</td><td class="mono">${esc(perfBase(r))}</td><td>${esc(unitOf(r))}</td></tr>`).join('')
+  const perfRows=perfList.map(r=>`<tr class="perf-row" data-id="${esc(r.id)}"><td>${esc(dispEngName(r))}</td><td>${esc(r.經辦人員||'—')}</td><td class="num">${esc(r.評分||'—')}</td><td class="mono">${esc(perfBase(r))}</td><td>${esc(unitOf(r))}</td></tr>`).join('')
     ||'<tr><td colspan="4" class="empty">此月份無已驗收案件。</td></tr>';
   // 承攬金額統計：每承攬商一行（有承攬商、非取消、決包日期落在所選月份/全年度；合併發包只計主案一件；依廠課／經辦篩選）
   const venStat={};
@@ -2440,7 +2441,7 @@ function renderStats(){
     <div class="stab-pane" style="${statsTab==='perf'?'':'display:none'}">
       <div class="mhint" style="margin-bottom:8px">列出基準日落在所選月份的案件（一般＝驗收合格日、自理＝完工日、取消件＝取消日期；依廠課／經辦人員／統計月份篩選）。評分為 1～6。</div>
       <table class="stats-tbl perf-tbl">
-        <thead><tr><th>發包工程名稱</th><th>評分</th><th>驗收合格日</th><th>委託單位</th></tr></thead>
+        <thead><tr><th>發包工程名稱</th><th>工程經辦</th><th>評分</th><th>驗收合格日</th><th>委託單位</th></tr></thead>
         <tbody>${perfRows}</tbody>
       </table>
     </div>
