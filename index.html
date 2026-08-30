@@ -133,6 +133,13 @@
   .vry-tag{font-size:9.5px;font-weight:700;margin-top:4px;line-height:1.15}
   .vry-pending{color:var(--ink-faint)}
   .vry-signing{color:var(--doing)}
+  .arch-done{color:var(--done);font-weight:700;font-size:12px}
+  .arch-pending{color:var(--ink-faint);font-size:12px}
+  .arch-btn{margin-left:6px;font-size:11px;padding:3px 10px;border:1px solid var(--blue);color:var(--blue);background:#fff;border-radius:6px;cursor:pointer}
+  .arch-btn:hover{background:var(--blue-wash)}
+  .arch-date{font-size:12px;border:1px solid var(--line);border-radius:6px;padding:3px 5px;font-family:var(--mono)}
+  .arch-ok{font-size:11px;padding:3px 8px;border:none;background:var(--blue);color:#fff;border-radius:6px;cursor:pointer;margin-left:4px}
+  .arch-cancel{font-size:11px;padding:3px 8px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;margin-left:2px}
   .bid-future{color:var(--done)}
   .bid-today{color:var(--doing)}
   .bid-past{color:var(--overdue)}
@@ -797,7 +804,7 @@ function ensureShape(r){
   // 相容：舊欄位 合約完成日 → 合約到期日（一次性搬移，之後只用 合約到期日）
   if(r.合約完成日!=null && r.合約完成日!=='' && (r.合約到期日==null||r.合約到期日==='')){ r.合約到期日=r.合約完成日; }
   delete r.合約完成日;
-  ['工程名稱','委託內容','委託人','電話','支出項目','流程編號','委託單號','電腦委託單號','工程編號','工程類別','委託單位','經辦人員','派案核准日期','發包工程名稱','預計開標日期','決包日期','合約到期日','合約用印完成日','工程驗收報告表送簽','合約金額','承攬商','付款方式','評分','開工日','完工日','取消日期','取消原因','合併主單','備註']
+  ['工程名稱','委託內容','委託人','電話','支出項目','流程編號','委託單號','電腦委託單號','工程編號','工程類別','委託單位','經辦人員','派案核准日期','發包工程名稱','預計開標日期','決包日期','合約到期日','合約用印完成日','工程驗收報告表送簽','歸檔日期','合約金額','承攬商','付款方式','評分','開工日','完工日','取消日期','取消原因','合併主單','備註']
     .forEach(k=>{ if(r[k]==null)r[k]=''; });
   if(!r.id)r.id='rec_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
   if(!Array.isArray(r.nodes)||r.nodes.length!==NODE_DEFS.length||r.nodes.some((n,i)=>n.name!==NODE_DEFS[i].name))
@@ -833,6 +840,8 @@ function ensureShape(r){
   const last99=(r.付款階段||[]).find(s=>s.stage==='99');
   if(last99&&!last99.簽核&&r.nodes[6]&&r.nodes[6].status==='done'&&r.nodes[6].date)last99.簽核=r.nodes[6].date;
   syncPayStatus(r);
+  // 歸檔僅適用已結案：一旦退回（未結案）自動清除歸檔日期
+  if((r.歸檔日期||'').trim() && !isClosed(r)) r.歸檔日期='';
   return r;
 }
 // 節點1（收受委託單）：有工程編號＝完成；並把節點2帶為進行中（進度推進到節點2）
@@ -1832,6 +1841,12 @@ function renderDetail(){
     </div>
     <div class="hint" style="text-align:left">驗收合格日與快捷視窗為同一欄位。驗收合格日與評分需一起填寫或一起清除；只填其一無法儲存。清空驗收合格日（含評分）會讓卡片退回節點6（驗收作業）等待重新輸入。評分限 1～6。</div>
 
+    <div class="section-label">歸檔（結案後作業）</div>
+    <div class="field-grid">
+      <div class="f"><label>歸檔日期<span class="mhint2">（有值＝已歸檔）</span></label><input type="date" class="code" data-key="歸檔日期" value="${esc(r.歸檔日期||'')}"></div>
+    </div>
+    <div class="hint" style="text-align:left">結案後的歸檔作業。歸檔日期有值＝已歸檔、空白＝待歸檔；也可於「已結案案件」頁一鍵歸檔。案件若退回節點看板（清空 99 期簽核完成或取消結案），歸檔日期會自動清除。</div>
+
     <div class="section-label">節點7 付款（各階段獨立追蹤）</div>
     <div class="payrows" id="payrows"></div>
     <div class="hint" style="text-align:left">階段由節點2「付款方式」決定（99 為最後一期）。每期填送簽日期、簽核完成日期：兩者皆空＝尚未送簽、有送簽無簽核＝送簽流程中、簽核完成＝簽核完成傳送會計。99 期簽核完成＝整件結案。</div>
@@ -2273,23 +2288,25 @@ function renderStats(){
     if(kind==='ytdRecv') return ad && ad.slice(0,4)===yStr ? ad : null;
     if(kind==='curFin')  return fd && inSelMonth(fd) ? fd : null;
     if(kind==='ytdFin')  return fd && fd.slice(0,4)===yStr ? fd : null;
+    if(kind==='curArch') return r.歸檔日期 && inSelMonth(r.歸檔日期) ? r.歸檔日期 : null;
+    if(kind==='ytdArch') return r.歸檔日期 && r.歸檔日期.slice(0,4)===yStr ? r.歸檔日期 : null;
     return null;
   }
   function statsList(staff,kind){
     return records.filter(inScope).filter(r=>staff==='__total__'||staffKey(r)===staff)
       .map(r=>({r,d:statsMatch(r,kind)})).filter(x=>x.d);
   }
-  const bucket={}; const ensure=k=>bucket[k]||(bucket[k]={curRecv:0,ytdRecv:0,curFin:0,ytdFin:0});
+  const bucket={}; const ensure=k=>bucket[k]||(bucket[k]={curRecv:0,ytdRecv:0,curFin:0,ytdFin:0,curArch:0,ytdArch:0});
   records.filter(inScope).forEach(r=>{
     const k=staffKey(r);
-    ['curRecv','ytdRecv','curFin','ytdFin'].forEach(kind=>{ if(statsMatch(r,kind))ensure(k)[kind]++; });
+    ['curRecv','ytdRecv','curFin','ytdFin','curArch','ytdArch'].forEach(kind=>{ if(statsMatch(r,kind))ensure(k)[kind]++; });
   });
   const rowsData=Object.keys(bucket).sort((a,b)=>a==='（未指派）'?1:b==='（未指派）'?-1:a.localeCompare(b,'zh')).map(k=>({k,...bucket[k]}));
-  const total=rowsData.reduce((a,r)=>({curRecv:a.curRecv+r.curRecv,ytdRecv:a.ytdRecv+r.ytdRecv,curFin:a.curFin+r.curFin,ytdFin:a.ytdFin+r.ytdFin}),{curRecv:0,ytdRecv:0,curFin:0,ytdFin:0});
+  const total=rowsData.reduce((a,r)=>({curRecv:a.curRecv+r.curRecv,ytdRecv:a.ytdRecv+r.ytdRecv,curFin:a.curFin+r.curFin,ytdFin:a.ytdFin+r.ytdFin,curArch:a.curArch+r.curArch,ytdArch:a.ytdArch+r.ytdArch}),{curRecv:0,ytdRecv:0,curFin:0,ytdFin:0,curArch:0,ytdArch:0});
   const cell=(staff,kind,v)=>`<td class="num stat-cell" data-staff="${esc(staff)}" data-kind="${kind}">${v}</td>`;
-  const rowsHtml=rowsData.map(r=>`<tr><td>${esc(r.k)}</td>${cell(r.k,'curRecv',r.curRecv)}${cell(r.k,'ytdRecv',r.ytdRecv)}${cell(r.k,'curFin',r.curFin)}${cell(r.k,'ytdFin',r.ytdFin)}</tr>`).join('')
-    ||'<tr><td colspan="5" class="empty">此期間無資料。</td></tr>';
-  const totalRow=`<tr><td>合計</td>${cell('__total__','curRecv',total.curRecv)}${cell('__total__','ytdRecv',total.ytdRecv)}${cell('__total__','curFin',total.curFin)}${cell('__total__','ytdFin',total.ytdFin)}</tr>`;
+  const rowsHtml=rowsData.map(r=>`<tr><td>${esc(r.k)}</td>${cell(r.k,'curRecv',r.curRecv)}${cell(r.k,'ytdRecv',r.ytdRecv)}${cell(r.k,'curFin',r.curFin)}${cell(r.k,'ytdFin',r.ytdFin)}${cell(r.k,'curArch',r.curArch)}${cell(r.k,'ytdArch',r.ytdArch)}</tr>`).join('')
+    ||'<tr><td colspan="7" class="empty">此期間無資料。</td></tr>';
+  const totalRow=`<tr><td>合計</td>${cell('__total__','curRecv',total.curRecv)}${cell('__total__','ytdRecv',total.ytdRecv)}${cell('__total__','curFin',total.curFin)}${cell('__total__','ytdFin',total.ytdFin)}${cell('__total__','curArch',total.curArch)}${cell('__total__','ytdArch',total.ytdArch)}</tr>`;
   // 近12個月趨勢
   const trend=[]; for(let i=11;i>=0;i--){ const d=new Date(y, m-1-i, 1); const ym=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); let recv=0,fin=0; records.filter(inScope).forEach(r=>{ if((r.派案核准日期||'').slice(0,7)===ym)recv++; if((finBasis(r)||'').slice(0,7)===ym)fin++; }); trend.push({ym,recv,fin}); }
   const maxV=Math.max(1, ...trend.map(t=>Math.max(t.recv,t.fin)));
@@ -2402,7 +2419,7 @@ function renderStats(){
       <div class="msec">
         <div class="msec-t">${y} 年 ${allYear?'全年度':m+' 月'} · 經辦人員統計</div>
         <table class="stats-tbl summary-tbl">
-          <thead><tr><th>經辦人員</th><th>當月收受</th><th>年度累積收受</th><th>當月完工</th><th>年度累積完工</th></tr></thead>
+          <thead><tr><th>經辦人員</th><th>當月收受</th><th>年度累積收受</th><th>當月完工</th><th>年度累積完工</th><th>當月歸檔</th><th>年度累計歸檔</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
           <tfoot>${totalRow}</tfoot>
         </table>
@@ -2449,8 +2466,8 @@ function renderStats(){
   wrap.querySelectorAll('.stab').forEach(b=>{ b.onclick=()=>{ statsTab=b.dataset.st; renderStats(); }; });
   const upd=()=>{ statsYm=document.getElementById('statsY').value+'-'+document.getElementById('statsM').value; renderStats(); };
   document.getElementById('statsY').onchange=upd; document.getElementById('statsM').onchange=upd;
-  const kindLabel={curRecv:'當月收受',ytdRecv:'年度累積收受',curFin:'當月完工',ytdFin:'年度累積完工'};
-  const dateLabel={curRecv:'派案核准日期',ytdRecv:'派案核准日期',curFin:'完工日期',ytdFin:'完工日期'};
+  const kindLabel={curRecv:'當月收受',ytdRecv:'年度累積收受',curFin:'當月完工',ytdFin:'年度累積完工',curArch:'當月歸檔',ytdArch:'年度累計歸檔'};
+  const dateLabel={curRecv:'派案核准日期',ytdRecv:'派案核准日期',curFin:'完工日期',ytdFin:'完工日期',curArch:'歸檔日期',ytdArch:'歸檔日期'};
   wrap.querySelectorAll('.stat-cell').forEach(td=>{
     td.onclick=()=>{
       if(td.dataset.vendor!==undefined){
@@ -2494,6 +2511,10 @@ function renderClosed(){
     const closeDate=closeOf(r);
     const 驗收=(r.nodes[5]&&r.nodes[5].date)||'';
     const dash=v=>{ const s=(v==null?'':String(v)).trim(); return s||'—'; };
+    const archived=!!(r.歸檔日期||'').trim();
+    const archCell=archived
+      ? '<span class="arch-done">已歸檔</span>'
+      : '<span class="arch-pending">待歸檔</span> <button class="arch-btn">歸檔</button>';
     return `<tr data-id="${esc(r.id)}" class="closed-row">
       <td>${esc(dash(r.委託單號))}</td>
       <td>${esc(dash(unitOf(r)))}</td>
@@ -2504,17 +2525,27 @@ function renderClosed(){
       <td class="num">${esc(dash(r.合約金額))}</td>
       <td class="mono">${esc(dash(驗收))}</td>
       <td><span class="ctype ctype-${isCancelled(r)?'cancel':(r.工程類別==='自理工程'?'self':'normal')}">${esc(closeType(r))}</span></td>
-      <td class="mono">${esc(dash(closeDate))}</td></tr>`;
-  }).join('')||'<tr><td colspan="10" class="empty">目前沒有符合條件的已結案案件。</td></tr>';
-  wrap.innerHTML=`<div class="panel mpanel" style="max-width:1200px">
+      <td class="mono">${esc(dash(closeDate))}</td>
+      <td class="arch-cell" data-id="${esc(r.id)}">${archCell}</td></tr>`;
+  }).join('')||'<tr><td colspan="11" class="empty">目前沒有符合條件的已結案案件。</td></tr>';
+  wrap.innerHTML=`<div class="panel mpanel" style="max-width:1280px">
     <div class="panel-h"><span>已結案案件</span><span class="mc-sync">共 ${list.length} 件</span></div>
-    <div class="mhint" style="margin-bottom:10px">99期簽核完成即視為結案（自理工程為施工完工即結案，其結案日採完工日）。點列可進入該案完整明細（可修改，例如清空99期簽核完成日以退回節點看板）。可用上方頁籤右側篩選（廠課、經辦人員、派案核准月份）。</div>
+    <div class="mhint" style="margin-bottom:10px">99期簽核完成即視為結案（自理工程為施工完工即結案，其結案日採完工日）。結案後需再做「歸檔」：點該列「歸檔」鈕，輸入歸檔日期（預設今天、可改）後確認。歸檔錯誤請進該案明細修改。點列（非歸檔鈕）可進入完整明細。可用上方頁籤右側篩選（廠課、經辦人員、派案核准月份）。</div>
     <table class="stats-tbl closed-tbl">
-      <thead><tr><th>委託單號</th><th>委託單位（廠課）</th><th>工程編號</th><th>發包工程名稱</th><th>經辦人員</th><th>承攬商</th><th>合約金額</th><th>驗收合格日</th><th>結案類型</th><th>結案日</th></tr></thead>
+      <thead><tr><th>委託單號</th><th>委託單位（廠課）</th><th>工程編號</th><th>發包工程名稱</th><th>經辦人員</th><th>承攬商</th><th>合約金額</th><th>驗收合格日</th><th>結案類型</th><th>結案日</th><th>歸檔狀態</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`;
   wrap.querySelectorAll('.closed-row').forEach(tr=>{ tr.onclick=()=>{ activeId=tr.dataset.id; setView('list'); }; });
+  wrap.querySelectorAll('.arch-btn').forEach(btn=>{ btn.onclick=(e)=>{ e.stopPropagation();
+    const td=btn.closest('.arch-cell'); const id=td.dataset.id;
+    td.innerHTML=`<input type="date" class="arch-date" value="${todayISO()}"> <button class="arch-ok">確認</button> <button class="arch-cancel">取消</button>`;
+    const dateInp=td.querySelector('.arch-date');
+    dateInp.onclick=ev=>ev.stopPropagation();
+    td.querySelector('.arch-ok').onclick=async(ev)=>{ ev.stopPropagation(); const v=dateInp.value; if(!v){ alert('請選擇歸檔日期。'); return; } const rec=records.find(x=>x.id===id); if(rec){ rec.歸檔日期=v; await save(); } renderClosed(); renderStats&&0; };
+    td.querySelector('.arch-cancel').onclick=ev=>{ ev.stopPropagation(); renderClosed(); };
+    setTimeout(()=>{ try{dateInp.focus();}catch(e){} },20);
+  }; });
 }
 function renderMaster(){
   const wrap=document.getElementById('viewMaster'); if(!wrap)return;
