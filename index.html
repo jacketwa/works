@@ -459,7 +459,7 @@
 
   <div class="alerts-row" id="alertsRow">
     <div class="alerts" id="alerts"></div>
-    <input type="search" id="searchBox" class="search-box" placeholder="搜尋 委託單號/工程編號/工程名稱" autocomplete="off">
+    <input type="search" id="searchBox" class="search-box" placeholder="搜尋全部欄位（單號/編號/名稱/承攬商/經辦/內容…）" autocomplete="off">
   </div>
   <div class="pay-alerts" id="payAlerts" style="display:none"></div>
   <div class="pay-alerts" id="trackAlerts" style="display:none"></div>
@@ -988,7 +988,15 @@ function matchUnit(r){ return !unitFilterVal || unitOf(r)===unitFilterVal; }
 function matchStaff(r){ if(!staffFilterVal)return true; const v=(r.經辦人員||'').trim(); if(staffFilterVal==='__none__')return !v; return v===staffFilterVal; }
 function matchAppr(r){ if(!apprFilterVal)return true; const d=(r.派案核准日期||'').trim(); if(apprFilterVal==='__none__')return !d; return d.slice(0,7)===apprFilterVal; }
 function matchSearch(r){ if(!searchVal)return true; const q=searchVal.toLowerCase();
-  return [r.委託單號,r.工程編號,r.發包工程名稱].some(v=>(v||'').toLowerCase().includes(q)); }
+  const fields=[r.委託單號,r.工程編號,r.電腦委託單號,r.發包工程名稱,r.工程名稱,r.委託內容,unitOf(r),r.委託單位,r.經辦人員,r.承攬商,r.合約金額,r.電話,r.委託人,r.支出項目,r.流程編號,r.備註,r.付款方式,r.工程類別,r.評分,r.取消原因,
+    r.派案核准日期,r.預計開標日期,r.決包日期,r.合約到期日,r.合約用印完成日,r.工程驗收報告表送簽,r.完工日,r.開工日,r.歸檔日期,r.取消日期,(r.nodes&&r.nodes[5]&&r.nodes[5].date)];
+  if(fields.some(v=>(v==null?'':String(v)).toLowerCase().includes(q)))return true;
+  // 金額去逗號後也可比對（打 500000 找得到「500,000」）
+  const amtDigits=String(r.合約金額||'').replace(/[^0-9.]/g,''); if(amtDigits && amtDigits.includes(q.replace(/[^0-9.]/g,'')) && /[0-9]/.test(q))return true;
+  // 施工/付款子項的名稱與日期一併搜尋
+  if((r.施工追蹤項||[]).some(it=>((it.name||'')+(it.date||'')).toLowerCase().includes(q)))return true;
+  if((r.付款階段||[]).some(s=>((s.完成階段||'')+(s.送簽||'')+(s.簽核||'')).toLowerCase().includes(q)))return true;
+  return false; }
 function matchOpen(r){ return !isClosed(r); }
 function matchAll(r){ return matchUnit(r)&&matchStaff(r)&&matchAppr(r)&&matchSearch(r); }
 const DATE_SOURCES=[
