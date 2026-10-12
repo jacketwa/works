@@ -804,7 +804,7 @@ function ensureShape(r){
   // 相容：舊欄位 合約完成日 → 合約到期日（一次性搬移，之後只用 合約到期日）
   if(r.合約完成日!=null && r.合約完成日!=='' && (r.合約到期日==null||r.合約到期日==='')){ r.合約到期日=r.合約完成日; }
   delete r.合約完成日;
-  ['工程名稱','委託內容','委託人','電話','支出項目','流程編號','委託單號','電腦委託單號','工程編號','工程類別','委託單位','經辦人員','派案核准日期','發包工程名稱','預計開標日期','決包日期','合約到期日','合約用印完成日','工程驗收報告表送簽','歸檔日期','合約金額','承攬商','付款方式','評分','開工日','完工日','取消日期','取消原因','合併主單','備註']
+  ['工程名稱','委託內容','委託人','電話','支出項目','流程編號','委託單號','電腦委託單號','工程編號','工程類別','委託單位','經辦人員','派案核准日期','發包工程名稱','預計開標日期','決包日期','合約到期日','合約用印完成日','廠商用印','公司用印','工程驗收報告表送簽','歸檔日期','合約金額','承攬商','付款方式','評分','開工日','完工日','取消日期','取消原因','合併主單','備註']
     .forEach(k=>{ if(r[k]==null)r[k]=''; });
   if(!r.id)r.id='rec_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
   if(!Array.isArray(r.nodes)||r.nodes.length!==NODE_DEFS.length||r.nodes.some((n,i)=>n.name!==NODE_DEFS[i].name))
@@ -1456,6 +1456,10 @@ function renderBoard(){
         else            bidTag=`<div class="bid-tag bid-past">應開標：${fmt(r.預計開標日期)}（已過 ${-dd} 天）</div>`;
       }
       let vryTag='';
+      if(i===3){ const co=!!(r.公司用印||'').trim(), ven=!!(r.廠商用印||'').trim();
+        if(co) vryTag=`<div class="vry-tag vry-signing">公司用印流程中</div>`;
+        else if(ven) vryTag=`<div class="vry-tag vry-signing">廠商用印中</div>`;
+      }
       if(i===5){ const signed=!!(r.工程驗收報告表送簽||'').trim();
         vryTag=`<div class="vry-tag vry-${signed?'signing':'pending'}">${signed?'驗收簽核流程中':'尚未驗收'}</div>`;
       }
@@ -1649,6 +1653,8 @@ function openQuick(r,i){
        <div class="quick-row1"><label>合約到期日<span class="req">＊</span></label><input id="qDue" type="date" value="${esc(r.合約到期日||'')}"></div>
        <div class="quick-row1"><label>承攬商<span class="req">＊</span></label><input id="qVen" type="text" value="${esc(r.承攬商||'')}"></div>
        <div class="quick-row1"><label>合約金額<span class="req">＊</span></label><input id="qAmt" type="text" value="${esc(r.合約金額||'')}" inputmode="numeric"></div>
+       <div class="quick-row1"><label>廠商用印</label><input id="qVenSeal" type="date" value="${esc(r.廠商用印||'')}"></div>
+       <div class="quick-row1"><label>公司用印</label><input id="qCoSeal" type="date" value="${esc(r.公司用印||'')}"></div>
        <div class="quick-row1"><label>${esc(stamp)}</label><input id="qStamp" type="date" value="${esc(r.合約用印完成日||'')}">
          <button class="qbtn ok" id="quickOk" aria-label="確認">${CHECK_I}</button>
          <button class="qbtn no" id="quickNo" aria-label="取消">${CROSS_I}</button></div>
@@ -1660,7 +1666,7 @@ function openQuick(r,i){
       if(!due){ alert('「合約到期日」為必填，請先填寫。'); document.getElementById('qDue').focus(); return; }
       if(!ven){ alert('「承攬商」為必填，請先填寫。'); document.getElementById('qVen').focus(); return; }
       if(!amt){ alert('「合約金額」為必填，請先填寫。'); document.getElementById('qAmt').focus(); return; }
-      r.決包日期=award; r.合約到期日=due; r.完工日=due; r.承攬商=ven; r.合約金額=amt; r.合約用印完成日=stampV;
+      r.決包日期=award; r.合約到期日=due; r.完工日=due; r.承攬商=ven; r.合約金額=amt; r.合約用印完成日=stampV; r.廠商用印=document.getElementById('qVenSeal').value; r.公司用印=document.getElementById('qCoSeal').value;
       applyAutoStatus(r); applyCategoryFlow(r); shinStatusFlow(r); // 節點4完成與跳轉依「合約用印完成日」重算
       await save(); ov.classList.remove('open'); renderBoard(); renderAlerts(); renderList();
     };
@@ -1825,6 +1831,8 @@ function renderDetail(){
     <div class="field-grid">
       <div class="f"><label>決包日期</label><input type="date" class="code" data-key="決包日期" value="${esc(r.決包日期||'')}"></div>
       <div class="f"><label>合約到期日＝預定完成日</label><input type="date" class="code" data-key="合約到期日" id="contractDate" value="${esc(r.合約到期日||'')}"></div>
+      <div class="f"><label>廠商用印</label><input type="date" class="code" data-key="廠商用印" value="${esc(r.廠商用印||'')}"></div>
+      <div class="f"><label>公司用印</label><input type="date" class="code" data-key="公司用印" value="${esc(r.公司用印||'')}"></div>
       <div class="f"><label>${esc(stampLabel(r))}<span class="mhint2">（填入才進節點5）</span></label><input type="date" class="code" data-key="合約用印完成日" id="stampDate" value="${esc(r.合約用印完成日||'')}"></div>
       <div class="f"><label>施工追蹤起算日（自動推算）</label><input class="code" id="trackOut" value="" disabled></div>
       <div class="f"><label>承攬商${r.合約金額&&!r.承攬商?' （填了金額必填）':''}</label><input data-key="承攬商" value="${esc(r.承攬商||'')}"></div>
