@@ -1064,9 +1064,9 @@ async function load(){
   if(!raw){ try{ const r1=await store.get(OLDKEY); if(r1&&r1.value)raw=JSON.parse(r1.value); }catch(e){} }
   records=Array.isArray(raw)?raw.map(ensureShape):[];
   if(records.length===0)records=[seed()];
-  try{ await store.set(KEY,JSON.stringify(records)); }catch(e){} // 僅存本機，不排程雲端推送（避免開機競態）
+  try{ await store.set(KEY,JSON.stringify(persistRecords())); }catch(e){} // 僅存本機，不排程雲端推送（避免開機競態）
 }
-async function save(){ try{ await store.set(KEY,JSON.stringify(records)); }catch(e){ console.error('儲存失敗',e); } scheduleCloudSync(); }
+async function save(){ try{ await store.set(KEY,JSON.stringify(persistRecords())); }catch(e){ console.error('儲存失敗',e); } scheduleCloudSync(); }
 
 let cfg={ocrKey:'',sheetUrl:'',visionKey:''};
 async function loadCfg(){ try{ const r=await store.get('wo_config'); if(r&&r.value)cfg=Object.assign(cfg,JSON.parse(r.value)); }catch(e){} }
@@ -1127,8 +1127,8 @@ async function cloudReconcile(){
   if(!cfg.sheetUrl)return;
   setSync('run'); syncInFlight=true;
   try{
-    const cur={}; records.forEach(r=>cur[r.id]=JSON.stringify(r));
-    for(const r of records){ if(lastSynced[r.id]!==cur[r.id]){ await callScript({action:'upsert',record:r}); lastSynced[r.id]=cur[r.id]; } }
+    const cur={}; persistRecords().forEach(r=>cur[r.id]=JSON.stringify(r));
+    for(const r of persistRecords()){ if(lastSynced[r.id]!==cur[r.id]){ await callScript({action:'upsert',record:r}); lastSynced[r.id]=cur[r.id]; } }
     for(const id of Object.keys(lastSynced)){ if(!(id in cur)){ await callScript({action:'delete',id}); delete lastSynced[id]; } }
     setSync('ok'); clearTimeout(retryTimer); retryTimer=null;
   }catch(e){
@@ -1147,7 +1147,7 @@ async function cloudInitialPull(){
     const incoming=(d.records||[]).map(ensureShape);
     if(incoming.length){
       records=incoming; activeId=records[0]?records[0].id:null; markAllSynced();
-      await store.set(KEY,JSON.stringify(records)); renderAlerts(); setView(view); setSync('ok');
+      await store.set(KEY,JSON.stringify(persistRecords())); renderAlerts(); setView(view); setSync('ok');
       initialPullDone=true;                       // 抓取成功後才允許自動推送
     }else{
       markAllSynced(); initialPullDone=true; await cloudReconcile(); // 雲端空 → 把本機資料推上去做為初始
@@ -1181,7 +1181,7 @@ async function backgroundRefresh(){
       records=merged; if(!records.find(r=>r.id===activeId))activeId=records[0]?records[0].id:null;
       // 只把「乾淨」記錄的同步基準更新，dirty 的維持原樣待下次 cloudReconcile 處理
       records.forEach(r=>{ if(lastSynced[r.id]===undefined && incomingMap[r.id]) lastSynced[r.id]=JSON.stringify(r); });
-      await store.set(KEY,JSON.stringify(records)); renderAlerts(); setView(view); setSync('ok');
+      await store.set(KEY,JSON.stringify(persistRecords())); renderAlerts(); setView(view); setSync('ok');
     }
   }catch(e){ /* 背景刷新失敗屬非關鍵（本機資料已保存、上次上傳已成功）→ 靜默不報離線，避免誤導；下次存檔的同步會處理真正的連線問題 */ }
 }
@@ -1204,6 +1204,9 @@ function seed(){
     合約到期日:'2026-06-30', 合約用印完成日:'2026-05-05', 承攬商:'（範例）', 合約金額:'85000', nodes:n, 備註:''});
 }
 function blank(){ return ensureShape({id:'rec_'+Date.now()}); }
+/* 新增委託草稿：按「儲存變更」前只存在畫面上，不寫入本機/雲端；跳離即捨棄 */
+function persistRecords(){ return records.filter(r=>!r._draft); }
+function discardDrafts(keepId){ const before=records.length; records=records.filter(r=>!r._draft||r.id===keepId); if(records.length!==before && !records.find(r=>r.id===activeId)) activeId=records[0]?records[0].id:null; }
 
 /* ---------- helpers ---------- */
 const today=()=>{const d=new Date();d.setHours(0,0,0,0);return d;};
@@ -1242,6 +1245,7 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 
 /* ---------- view switch ---------- */
 function setView(v){
+  if(v!=='list') discardDrafts();
   view=v;
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.v===v));
   document.getElementById('viewBoard').style.display=v==='board'?'block':'none';
@@ -1754,6 +1758,7 @@ function openQuick(r,i){
 
 /* ---------- list ---------- */
 function renderList(){
+  discardDrafts(activeId);
   const L=document.getElementById('list');
   const list=records.filter(r=>matchAll(r)&&matchOpen(r));
   document.getElementById('count').textContent=((unitFilterVal||staffFilterVal)?list.length+' / '+records.length:records.length)+' 件';
@@ -1776,6 +1781,7 @@ function renderList(){
 
 /* ---------- detail ---------- */
 function renderDetail(){
+  discardDrafts(activeId);
   const D=document.getElementById('detail'), btnOcr=document.getElementById('btnOcr');
   const r=records.find(x=>x.id===activeId);
   if(!r){ D.innerHTML='<div class="empty">從左側選一筆委託，或新增一筆。</div>'; btnOcr.style.display='none'; return; }
@@ -1992,6 +1998,7 @@ function renderDetail(){
       const el=document.querySelector('#trackrows .trkname[value=""]'); if(el)el.focus();
       return;
     }
+    delete r._draft;
     await save();
     setView('board');
     window.scrollTo({top:0,behavior:'smooth'});
@@ -2692,7 +2699,7 @@ function renderStations(r){
 }
 
 /* ---------- new ---------- */
-document.getElementById('btnNew').onclick=async()=>{ const r=blank(); records.unshift(r); activeId=r.id; await save(); setView('list'); };
+document.getElementById('btnNew').onclick=async()=>{ discardDrafts(); const r=blank(); r._draft=true; records.unshift(r); activeId=r.id; setView('list'); };
 document.getElementById('togNames').onchange=async(e)=>{ showNames=e.target.checked; try{ await store.set('wo_shownames',JSON.stringify(showNames)); }catch(err){} renderBoard(); };
 document.getElementById('staffFilter').onchange=(e)=>{ staffFilterVal=e.target.value; renderAlerts(); if(view==='board')renderBoard(); else if(view==='list'){ renderList(); renderDetail(); } else if(view==='stats')renderStats(); else if(view==='closed')renderClosed(); };
 document.getElementById('apprFilter').onchange=(e)=>{ apprFilterVal=e.target.value; if(view==='board')renderBoard(); else if(view==='list'){ renderList(); renderDetail(); } else if(view==='closed')renderClosed(); };
@@ -3008,7 +3015,7 @@ document.getElementById('btnSheetPull').onclick=async()=>{
     const d=await resp.json();
     if(!d.ok)throw new Error(d.error||'回應錯誤');
     const incoming=(d.records||[]).map(ensureShape);
-    records=incoming; activeId=records[0]?records[0].id:null; await store.set(KEY,JSON.stringify(records)); markAllSynced(); setSync('ok');
+    records=incoming; activeId=records[0]?records[0].id:null; await store.set(KEY,JSON.stringify(persistRecords())); markAllSynced(); setSync('ok');
     renderAlerts(); setView(view);
     setSyncMsg('ok','✓ 已從 Google Sheet 載入 '+incoming.length+' 筆。');
   }catch(e){ setSyncMsg('err','載入失敗：'+esc(String(e.message||e))); }
