@@ -2132,7 +2132,8 @@ function flashMcSync(){ const el=document.getElementById('mcSync'); if(!el)retur
 
 /* ---------- 統計查詢 ---------- */
 let statsYm=null; // 'YYYY-MM'
-let statsTab='people'; // people | category | perf
+let statsTab='people'; // people | category | vendor | vendorOpen | perf
+let openVendorSel=''; // 承攬商在建工程：目前選定的承攬商
 function shinFinDate(r){ const sn=r.nodes&&r.nodes[SHIN_IDX]; if(!sn||!sn.subs)return ''; const f=sn.subs.find(s=>s.name==='完工'); return (f&&f.date)||''; }
 /* ================= 工料分析（底價模擬 + 常用細目） ================= */
 function bidRows(kind){ // 即時列（不保存）
@@ -2423,6 +2424,15 @@ function renderStats(){
   const venTblRows=venRows.map(x=>`<tr><td>${esc(x.v)}</td>${venCell(x.v,'count',x.count)}${venCell(x.v,'amt',fmtNT(x.total))}</tr>`).join('')
     ||'<tr><td colspan="3" class="empty">此期間無承攬資料。</td></tr>';
   const venTotalRow=`<tr><td>合計</td><td class="num">${venTotalCount}</td><td class="num">${fmtNT(venTotalAmt)}</td></tr>`;
+  // 承攬商在建工程：有承攬商、非取消、非附屬單、施工「完工」日期尚未填（依廠課／經辦篩選，不分月份）
+  const openPool=records.filter(r=>inScope(r)&&matchStaff(r)&&!isSub(r)&&!isCancelled(r)&&(r.承攬商||'').trim()&&!shinFinDate(r));
+  const openVendors=[...new Set(openPool.map(r=>r.承攬商.trim()))].sort((a,b)=>a.localeCompare(b,'zh'));
+  if(openVendorSel && !openVendors.includes(openVendorSel)) openVendorSel='';
+  const openList=openVendorSel? openPool.filter(r=>r.承攬商.trim()===openVendorSel).sort((a,b)=>(a.工程編號||'').localeCompare(b.工程編號||'')) : [];
+  const openAmt=openList.reduce((a,r)=>a+contractAmountNum(r),0);
+  const openVenOpts=`<option value="">（請選擇承攬商）</option>`+openVendors.map(v=>`<option value="${esc(v)}" ${v===openVendorSel?'selected':''}>${esc(v)}（${openPool.filter(r=>r.承攬商.trim()===v).length}）</option>`).join('');
+  const openRows=!openVendorSel? '<tr><td colspan="4" class="empty">請先於上方選擇承攬商。</td></tr>'
+    : (openList.map(r=>`<tr class="stat-row open-row" data-id="${esc(r.id)}"><td class="mono">${esc(r.工程編號||'—')}</td><td>${esc(r.發包工程名稱||r.工程名稱||'—')}</td><td>${esc(r.經辦人員||'—')}</td><td class="num">${(r.合約金額||'').trim()?fmtNT(contractAmountNum(r)):'—'}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">此承攬商目前沒有未完工的工程。</td></tr>');
   wrap.innerHTML=`<div class="panel mpanel" style="max-width:900px">
     <div class="panel-h"><span>統計查詢</span><span class="mc-sync">${esc(unitLabel)}</span></div>
     <div class="mrow" style="gap:10px">
@@ -2435,6 +2445,7 @@ function renderStats(){
       <button class="stab ${statsTab==='people'?'on':''}" data-st="people">工程統計</button>
       <button class="stab ${statsTab==='category'?'on':''}" data-st="category">工程類別</button>
       <button class="stab ${statsTab==='vendor'?'on':''}" data-st="vendor">承攬金額</button>
+      <button class="stab ${statsTab==='vendorOpen'?'on':''}" data-st="vendorOpen">承攬商在建工程</button>
       <button class="stab ${statsTab==='perf'?'on':''}" data-st="perf">過程績效</button>
     </div>
 
@@ -2478,6 +2489,19 @@ function renderStats(){
       <div id="venDetail"></div>
     </div>
 
+    <div class="stab-pane" style="${statsTab==='vendorOpen'?'':'display:none'}">
+      <div class="mhint" style="margin-bottom:8px">選擇承攬商，列出其目前承攬中、施工「完工」日期尚未填寫的工程（不分月份；排除取消件與合併發包附屬單；依廠課／經辦人員篩選）。點列可進入委託明細。</div>
+      <div class="mrow" style="gap:10px;margin-bottom:10px">
+        <label style="font-size:13px">承攬商</label>
+        <select id="openVenSel" class="unit-filter">${openVenOpts}</select>
+        ${openVendorSel?`<span class="mhint">${esc(openVendorSel)} · 未完工 <b>${openList.length}</b> 件 · 承攬金額合計 <b>${fmtNT(openAmt)}</b></span>`:''}
+      </div>
+      <table class="stats-tbl">
+        <thead><tr><th>工程編號</th><th>工程名稱</th><th>經辦人員</th><th>承攬金額</th></tr></thead>
+        <tbody>${openRows}</tbody>
+      </table>
+    </div>
+
     <div class="stab-pane" style="${statsTab==='perf'?'':'display:none'}">
       <div class="mhint" style="margin-bottom:8px">列出基準日落在所選月份的案件（一般＝驗收合格日、自理＝完工日、取消件＝取消日期；依廠課／經辦人員／統計月份篩選）。評分為 1～6。</div>
       <table class="stats-tbl perf-tbl">
@@ -2487,6 +2511,9 @@ function renderStats(){
     </div>
   </div>`;
   wrap.querySelectorAll('.stab').forEach(b=>{ b.onclick=()=>{ statsTab=b.dataset.st; renderStats(); }; });
+  { const ovs=document.getElementById('openVenSel'); if(ovs) ovs.onchange=()=>{ openVendorSel=ovs.value; renderStats(); }; }
+  wrap.querySelectorAll('.open-row').forEach(tr=>{ tr.onclick=()=>{ activeId=tr.dataset.id; setView('list'); }; });
+  if(statsTab==='vendorOpen'){ const mr=document.getElementById('statsY'); if(mr&&mr.parentElement) mr.parentElement.style.display='none'; }
   const upd=()=>{ statsYm=document.getElementById('statsY').value+'-'+document.getElementById('statsM').value; renderStats(); };
   document.getElementById('statsY').onchange=upd; document.getElementById('statsM').onchange=upd;
   const kindLabel={curRecv:'當月收受',ytdRecv:'年度累積收受',curFin:'當月完工',ytdFin:'年度累積完工',curArch:'當月歸檔',ytdArch:'年度累計歸檔'};
